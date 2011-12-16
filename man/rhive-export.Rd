@@ -3,12 +3,16 @@
 \alias{rhive.exportAll}
 \alias{rhive.assign}
 \alias{rhive.rm}
+\alias{rhive.script.export}
+\alias{rhive.script.unexport}
 \title{Export R function to Hive using functions in Package `RHive'}
 \usage{
-rhive.export(exportname,hosts = "127.0.0.1", port = 6311, pos = -1, envir = .rhiveExportEnv, limit = 104857600)
-rhive.exportAll(exportname, hosts = "127.0.0.1", port = 6311, pos = 1, envir = .rhiveExportEnv, limit = 104857600)
+rhive.export(exportname, hiveclient=rhive.defaults('hiveclient'), port = 6311, pos = -1, envir = .rhiveExportEnv, limit = 104857600)
+rhive.exportAll(exportname, hiveclient=rhive.defaults('hiveclient'), port = 6311, pos = 1, envir = .rhiveExportEnv, limit = 104857600)
 rhive.assign(name,value)
 rhive.rm(name)
+rhive.script.export(exportname, mapper = NULL, reducer = NULL, mapper_args=NULL, reducer_args=NULL, buffersize=-1L, hdfs = rhive.hdfs.defaults('hdfs'))
+rhive.script.unexport(exportname, hdfs = rhive.hdfs.defaults('hdfs'))
 }
 \description{
 Export R function to Hive using functions in Package `RHive'
@@ -33,7 +37,6 @@ this 'unfold' function allows user to change one column into many columns.
 this 'expand' function allows user to change one column into many rows.
 }
 \arguments{
-\item{hosts}{list of Rserve's address}
 \item{exportname}{function name to be exported.}
 \item{limit}{total exported object size. default is 100MB}
 \item{name}{a variable name, given as a character string.} 
@@ -41,6 +44,13 @@ this 'expand' function allows user to change one column into many rows.
 \item{pos}{where to do the assignment.}
 \item{envir}{the 'environment' to use.}
 \item{port}{port of Rserve.}
+\item{hiveclient}{a client for hive.}
+\item{mapper}{R object as map function or Hive query.}
+\item{reducer}{R object as reducer function.}
+\item{buffersize}{streaming buffer size.}
+\item{hdfs}{a client for hdfs.}
+\item{mapper_args}{mapper custom environment.}
+\item{reducer_args}{reducer custom environment.}
 } 
 \author{
 \email{rhive@nexr.com}
@@ -106,6 +116,33 @@ this 'expand' function allows user to change one column into many rows.
 
 ## name of UDAF is 'RA'
 \dontrun{rhive.query("select RA('hsum',sal) from emp group by empno")}
+
+
+## export/unexport user define map/reduce script
+\dontrun{
+map <- function(k,v) {
+
+      if(is.null(v)) {
+         put(NA,1)
+      }
+      lapply(v, function(vv) {
+         lapply(strsplit(x=vv,split ="\t")[[1]], function(w) put(paste(args,w,sep=""),1))
+      })
+  
+ }
+
+reduce <- function(k,vv) {
+ 
+     put(k,sum(as.numeric(vv)))
+  
+}
+
+mrscript <- rhive.script.export("scripttest",map,reduce)
+
+
+rhive.query(paste("from (from emp MAP ename,position USING '", mrscript[1], "' as position,one cluster by position) map_output REDUCE map_output.aa,map_output.bb USING '", mrscript[2], "' as position,count",sep=""))
+
+}
 
 ## close connection
 \dontrun{rhive.close()}

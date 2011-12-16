@@ -1,7 +1,7 @@
 Package: RHive
 Type: Package
 Title: R and Hive
-Version: 0.0-3
+Version: 0.0-4
 Description: RHive is an R extension facilitating
 			distributed computing via HIVE query.
 			It provides an easy to use HQL like SQL 
@@ -15,5 +15,5 @@ SystemRequirements: Hadoop core >= 0.20.3
         (http://hadoop.apache.org/core/), Hive >= 0.7.1
         (http://hive.apache.org/)
 Repository: CRAN
-Packaged: 2011-10-30 12:55:29 UTC; miloveme
-Date/Publication: 2011-11-02 17:17:10
+Packaged: 2011-12-16 08:43:16 UTC; miloveme
+Date/Publication: 2011-12-16 18:26:21

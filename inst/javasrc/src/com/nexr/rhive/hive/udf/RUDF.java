@@ -48,7 +48,7 @@ import org.rosuda.REngine.Rserve.RConnection;
  * RUDF
  *
  */
-@Description(name = "R", value = "_FUNC_(x) - Returns the result of R scalar function")
+@Description(name = "R", value = "_FUNC_(export-name,arg1,arg2,...,return-type) - Returns the result of R scalar function")
 public class RUDF extends GenericUDF {
     
     private static Map<String, String> funclist = new Hashtable<String, String>();
@@ -71,10 +71,16 @@ public class RUDF extends GenericUDF {
         
         for (int i = 1; i < (arguments.length - 1); i++) {
             
-            if (types[i] == STRING_TYPE) {
-                argument.append("\"" + converters[i].convert(arguments[i].get()) + "\"");
-            } else {
-                argument.append(converters[i].convert(arguments[i].get()));
+            Object value = converters[i].convert(arguments[i].get());
+            
+            if(value == null) {
+                argument.append("NULL");
+            }else {
+                if (types[i] == STRING_TYPE) {
+                    argument.append("\"" + converters[i].convert(arguments[i].get()) + "\"");
+                } else {
+                    argument.append(converters[i].convert(arguments[i].get()));
+                }
             }
             
             if (i < (arguments.length - 2))

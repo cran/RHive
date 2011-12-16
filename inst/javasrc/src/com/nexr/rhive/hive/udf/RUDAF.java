@@ -59,7 +59,7 @@ import org.rosuda.REngine.Rserve.RConnection;
  * RUDAF
  *
  */
-@Description(name = "RA", value = "_FUNC_(x) - Returns the result of R aggregation function")
+@Description(name = "RA", value = "_FUNC_(export-name,arg1,arg2,...) - Returns the result of R aggregation function")
 public class RUDAF extends AbstractGenericUDAFResolver {
     
     @Override
@@ -240,12 +240,22 @@ public class RUDAF extends AbstractGenericUDAFResolver {
                 for (int i = 1; i < parameters.length; i++) {
                     
                     if (types[i] == STRING_TYPE) {
-                        argument.append("\""
-                                + PrimitiveObjectInspectorUtils.getString(parameters[i],
-                                        inputOIs[i]) + "\"");
+                        
+                        String value = PrimitiveObjectInspectorUtils.getString(parameters[i],inputOIs[i]);
+                        
+                        if(value == null) {
+                            argument.append("NULL");
+                        }else {
+                            argument.append("\"" + value + "\"");
+                        }
                     } else {
-                        argument.append(PrimitiveObjectInspectorUtils.getDouble(parameters[i],
-                                inputOIs[i]));
+                        
+                        if(parameters[i] == null) {
+                            argument.append("NULL");
+                        } else {
+                            double value = PrimitiveObjectInspectorUtils.getDouble(parameters[i],inputOIs[i]);
+                            argument.append(value);
+                        }
                     }
                     
                     if (i < (parameters.length - 1))
@@ -521,6 +531,7 @@ public class RUDAF extends AbstractGenericUDAFResolver {
                 sb.append("c(");
             
             if (vector.isNumeric()) {
+             
                 // convert all numeric data to double.
                 double[] values = vector.asDoubles();
                 for (int j = 0; j < values.length; j++) {

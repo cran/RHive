@@ -1,8 +1,10 @@
 \name{rhive-query}
 \alias{rhive.query}
+\alias{rhive.big.query}
 \title{Execute HQL(Hive Query) in R, using functions in Package `RHive'}
 \usage{
 rhive.query(query, fetchsize = 40, limit = -1, hiveclient=rhive.defaults('hiveclient'))
+rhive.big.query(query ,fetchsize = 40, limit = -1, memlimit = 57374182, hiveclient =rhive.defaults('hiveclient'))
 }
 \description{
 Execute HQL(Hive Query) in R using functions in Package `RHive'
@@ -11,6 +13,7 @@ Execute HQL(Hive Query) in R using functions in Package `RHive'
 \item{query}{hive query.}
 \item{fetchsize}{fetch size for result.}
 \item{limit}{total result size.}
+\item{memlimit}{the size of data can be handled in R's memory.}
 \item{hiveclient}{a client for hive.}
 } 
 \details{

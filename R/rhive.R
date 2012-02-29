@@ -37,10 +37,10 @@ rhive.init <- function(hive=NULL,libs=NULL,hadoop=NULL,hlibs=NULL,verbose=FALSE)
   
   if(hadoop=="")
     rhive.CP <- c(list.files(libs,full.names=TRUE,pattern="jar$",recursive=FALSE)
-               ,list.files(paste(system.file(package="RHive"),"java",sep=.Platform$file.sep),pattern="jar$",full=T))
+               ,list.files(paste(system.file(package="RHive"),"java",sep=.Platform$file.sep),pattern="jar$",full.names=T))
   else {
   	rhive.CP <- c(list.files(libs,full.names=TRUE,pattern="jar$",recursive=FALSE)
-               ,list.files(paste(system.file(package="RHive"),"java",sep=.Platform$file.sep),pattern="jar$",full=T)
+               ,list.files(paste(system.file(package="RHive"),"java",sep=.Platform$file.sep),pattern="jar$",full.names=T)
                ,list.files(hadoop,full.names=TRUE,pattern="jar$",recursive=FALSE)
                ,list.files(hlibs,full.names=TRUE,pattern="jar$",recursive=FALSE)
                ,sprintf("%s/conf",hadoop))
@@ -170,6 +170,8 @@ rhive.connect <- function(host="127.0.0.1",port=10000, hdfsurl=NULL ,hosts = rhi
      client$execute(.jnew("java/lang/String","create temporary function RA as 'com.nexr.rhive.hive.udf.RUDAF'"))
      client$execute(.jnew("java/lang/String","create temporary function unfold as 'com.nexr.rhive.hive.udf.GenericUDTFUnFold'"))
      client$execute(.jnew("java/lang/String","create temporary function expand as 'com.nexr.rhive.hive.udf.GenericUDTFExpand'"))
+     client$execute(.jnew("java/lang/String","create temporary function rkey as 'com.nexr.rhive.hive.udf.RangeKeyUDF'"))
+     client$execute(.jnew("java/lang/String","create temporary function scale as 'com.nexr.rhive.hive.udf.ScaleUDF'"))
 
      hiveclient <- list(client,hivecon,c(host,port),hosts,hdfs,hdfsurl)
      
@@ -179,7 +181,7 @@ rhive.connect <- function(host="127.0.0.1",port=10000, hdfsurl=NULL ,hosts = rhi
      #     hivecon$close()	  
      #      print("call finalizer")
     # })
-     assign('hiveclient',hiveclient,env=RHive:::.rhiveEnv)
+     assign('hiveclient',hiveclient,envir=RHive:::.rhiveEnv)
 
 }
 
@@ -198,6 +200,26 @@ rhive.close <- function(hiveclient=rhive.defaults('hiveclient')) {
 
 	return(TRUE)
 	
+}
+
+rhive.big.query <- function(query ,fetchsize = 40, limit = -1, memlimit = 57374182, hiveclient =rhive.defaults('hiveclient')) {
+
+	tmptable <- paste("rhive_result_",as.integer(Sys.time()),sep="")
+	query <- paste("CREATE TABLE ", tmptable," AS ", query,sep="")
+	
+	rhive.query(query, fetchsize = fetchsize, limit = limit, hiveclient = hiveclient)
+	length <- rhive.size.table(tmptable)
+	
+	if(length > memlimit) {	
+		x <- tmptable
+		attr(x,"result:size") <- length
+
+		return(x)
+	}else {
+		result <- rhive.query(paste("select * from",tmptable),hiveclient=hiveclient)
+		rhive.query(paste("DROP TABLE ",tmptable,sep=""), hiveclient = hiveclient)
+		return(result)
+	}
 }
 
 rhive.query <- function(query, fetchsize = 40, limit = -1, hiveclient=rhive.defaults('hiveclient')) {
@@ -361,10 +383,30 @@ rhive.exportAll <- function(exportname, hiveclient=rhive.defaults('hiveclient'),
 	return(TRUE)
 }
 
-rhive.list.tables <- function(hiveclient=rhive.defaults('hiveclient')) {
+rhive.list.tables <- function(pattern, hiveclient=rhive.defaults('hiveclient')) {
 
-	rhive.query("show tables",hiveclient=hiveclient)
+	tablelist <- rhive.query("show tables",hiveclient=hiveclient)
+	
+	all.names <- as.character(tablelist[,'tab_name'])
 
+    if (!missing(pattern)) {
+        if ((ll <- length(grep("[", pattern, fixed = TRUE))) && 
+            ll != length(grep("]", pattern, fixed = TRUE))) {
+            if (pattern == "[") {
+                pattern <- "\\["
+                warning("replaced regular expression pattern '[' by  '\\\\['")
+            }
+            else if (length(grep("[^\\\\]\\[<-", pattern))) {
+                pattern <- sub("\\[<-", "\\\\\\[<-", pattern)
+                warning("replaced '[<-' by '\\\\[<-' in regular expression pattern")
+            }
+        }
+        all.names <- grep(pattern, all.names, value = TRUE)
+    }
+
+	tab_name <- all.names
+	
+	return(as.data.frame(tab_name))
 }
 
 rhive.desc.table <- function(tablename,detail=FALSE,hiveclient=rhive.defaults('hiveclient')) {
@@ -382,11 +424,32 @@ rhive.desc.table <- function(tablename,detail=FALSE,hiveclient=rhive.defaults('h
 
 rhive.load.table <- function(tablename, fetchsize = 40, limit = -1, hiveclient=rhive.defaults('hiveclient')) {
 
+	memsize <- 107374182
+
 	if(!is.character(tablename))
 		stop("argument type is wrong. tablename must be string type.")
 
-	rhive.query(paste("select * from",tablename),fetchsize = fetchsize, limit = limit,hiveclient=hiveclient)
 
+	length <- rhive.size.table(tablename)
+
+	if(length > memsize) {	
+	
+		if (limit > 0) {
+			result <- rhive.query(paste("select * from",tablename,"limit",limit),hiveclient=hiveclient)
+			return(result)
+		} else {
+			print("this table is too big to load")
+		    x <- tablename
+			attr(x,"result:size") <- length
+		    return(x)
+		}	
+	
+	} else {
+	
+		result <- rhive.query(paste("select * from",tablename),fetchsize = fetchsize, limit = limit,hiveclient=hiveclient)
+		return(result)
+	
+	}
 }
 
 rhive.exist.table <- function(tablename, hiveclient=rhive.defaults('hiveclient')) {
@@ -396,8 +459,13 @@ rhive.exist.table <- function(tablename, hiveclient=rhive.defaults('hiveclient')
 
     tablelist <- try(rhive.list.tables(), silent = FALSE)
     if(class(tablelist) == "try-error") stop("fail to execute 'rhive.list.tables()'")
+ 
+ 	if(length(row.names(tablelist)) == 0)
+ 		return(FALSE)
+ 
+    loc <- try((tablelist == tolower(tablename)), silent = TRUE)
+    if(class(loc) == "try-error") return(FALSE)
     
-    loc <- (tablelist == tolower(tablename))
     if(length(tablelist[loc]) == 0)
     	return(FALSE)
     else
@@ -405,7 +473,7 @@ rhive.exist.table <- function(tablename, hiveclient=rhive.defaults('hiveclient')
     	
 }
 
-rhive.napply <- function(tablename, FUN, ...,hiveclient =rhive.defaults('hiveclient')) {
+rhive.napply <- function(tablename, FUN, ..., forcedRef = TRUE, hiveclient =rhive.defaults('hiveclient')) {
 
 	if(!is.character(tablename))
 		stop("argument type is wrong. tablename must be string type.")
@@ -428,17 +496,17 @@ rhive.napply <- function(tablename, FUN, ...,hiveclient =rhive.defaults('hivecli
 	rhive.assign(exportname,FUN)
 	rhive.exportAll(exportname,hiveclient)
 	
-	tmptable <- paste(exportname,"_table",sep="")
-	
-	query <- paste("CREATE TABLE ",tmptable," AS SELECT ","R('",exportname,"'",cols,",0.0) FROM ",tablename,sep="")
-	
-	rhive.query(query,hiveclient=hiveclient)
-	
-	tmptable
+	hql <- paste("SELECT ","R('",exportname,"'",cols,",0.0) FROM ",tablename,sep="")
 
+	if(forcedRef)
+		result <- rhive.big.query(hql,memlimit=-1,hiveclient=hiveclient)
+	else
+		result <- rhive.big.query(hql,hiveclient=hiveclient)
+
+	return(result)
 }
 
-rhive.sapply <- function(tablename, FUN, ..., hiveclient =rhive.defaults('hiveclient')) {
+rhive.sapply <- function(tablename, FUN, ..., forcedRef = TRUE, hiveclient =rhive.defaults('hiveclient')) {
 
 	if(!is.character(tablename))
 		stop("argument type is wrong. tablename must be string type.")
@@ -461,16 +529,17 @@ rhive.sapply <- function(tablename, FUN, ..., hiveclient =rhive.defaults('hivecl
 	rhive.assign(exportname,FUN)
 	rhive.exportAll(exportname,hiveclient)
 	
-	tmptable <- paste(exportname,"_table",sep="")
+	hql <- paste("SELECT ","R('",exportname,"'",cols,",'') FROM ",tablename,sep="")
 	
-	query <- paste("CREATE TABLE ",tmptable," AS SELECT ","R('",exportname,"'",cols,",'') FROM ",tablename,sep="")
-	
-	rhive.query(query,hiveclient=hiveclient)
+	if(forcedRef)
+		result <- rhive.big.query(hql,memlimit=-1,hiveclient=hiveclient)
+	else
+		result <- rhive.big.query(hql,hiveclient=hiveclient)
 
-	tmptable
+	return(result)
 }
 
-rhive.aggregate <- function(tablename, hiveFUN, ..., groups = NULL , hiveclient =rhive.defaults('hiveclient')) {
+rhive.aggregate <- function(tablename, hiveFUN, ..., groups = NULL , forcedRef = TRUE, hiveclient =rhive.defaults('hiveclient')) {
     
 	if(!is.character(tablename))
 		stop("argument type is wrong. tablename must be string type.")    
@@ -485,11 +554,15 @@ rhive.aggregate <- function(tablename, hiveFUN, ..., groups = NULL , hiveclient 
          colindex <- colindex + 1
     }
     
-    tmptable <- paste(tablename,"_aggregate",as.integer(Sys.time()),sep="")
+    result <- ""
     
-    if(is.null(groups))
-		rhive.query(paste("CREATE TABLE ",tmptable," AS SELECT ", hiveFUN ,"(",cols,") FROM ",tablename,sep=""),hiveclient=hiveclient)
-	else {
+    if(is.null(groups)) {
+		if(forcedRef)
+			result <- rhive.big.query(paste("SELECT ", hiveFUN ,"(",cols,") FROM ",tablename,sep=""),memlimit=-1,hiveclient=hiveclient)
+		else
+			result <- rhive.big.query(paste("SELECT ", hiveFUN ,"(",cols,") FROM ",tablename,sep=""),hiveclient=hiveclient)
+
+	} else {
 		
 		index <- 0
 		gs <- ""
@@ -503,29 +576,32 @@ rhive.aggregate <- function(tablename, hiveFUN, ..., groups = NULL , hiveclient 
 			index <- index + 1
 		}
 		
-		query <- paste("CREATE TABLE ",tmptable," AS SELECT ", hiveFUN ,"(",cols,") FROM ",tablename," GROUP BY ",gs,sep="")
+		hql <- paste("SELECT ", hiveFUN ,"(",cols,") FROM ",tablename," GROUP BY ",gs,sep="")
 
-	    rhive.query(query,hiveclient=hiveclient)
+		if(forcedRef)
+			result <- rhive.big.query(hql,memlimit=-1,hiveclient=hiveclient)
+		else
+			result <- rhive.big.query(hql,hiveclient=hiveclient)
 	}
 	
 	
-	tmptable
+	return(result)
 
 }
 
-rhive.mapapply <- function(tablename, mapperFUN, mapinput=NULL, mapoutput=NULL, by=NULL, args=NULL, buffersize=-1L, verbose=FALSE, hiveclient =rhive.defaults('hiveclient')) {
+rhive.mapapply <- function(tablename, mapperFUN, mapinput=NULL, mapoutput=NULL, by=NULL, args=NULL, buffersize=-1L, verbose=FALSE, forcedRef = TRUE, hiveclient =rhive.defaults('hiveclient')) {
 
-	rhive.mrapply(tablename,mapperFUN=mapperFUN,mapinput=mapinput,mapoutput=mapoutput,by=by,mapper_args=args, reducer_args=NULL, buffersize=buffersize, verbose=verbose,hiveclient=hiveclient)
-
-}
-
-rhive.reduceapply <- function(tablename, reducerFUN, reduceinput=NULL,reduceoutput=NULL, args=NULL, buffersize=-1L, verbose=FALSE, hiveclient =rhive.defaults('hiveclient')) {
-
-	rhive.mrapply(tablename,reducerFUN=reducerFUN,reduceinput=reduceinput,reduceoutput=reduceoutput,mapper_args=NULL, reducer_args=args, buffersize=buffersize, verbose=verbose,hiveclient=hiveclient)
+	rhive.mrapply(tablename,mapperFUN=mapperFUN,reducerFUN = NULL, mapinput=mapinput,mapoutput=mapoutput,by=by,mapper_args=args, reducer_args=NULL, buffersize=buffersize, verbose=verbose, forcedRef = forcedRef, hiveclient=hiveclient)
 
 }
 
-rhive.mrapply <- function(tablename, mapperFUN, reducerFUN, mapinput=NULL, mapoutput=NULL, by=NULL, reduceinput=NULL,reduceoutput=NULL, mapper_args=NULL, reducer_args=NULL, buffersize=-1L, verbose=FALSE, hiveclient =rhive.defaults('hiveclient')) {
+rhive.reduceapply <- function(tablename, reducerFUN, reduceinput=NULL,reduceoutput=NULL, args=NULL, buffersize=-1L, verbose=FALSE, forcedRef = TRUE, hiveclient =rhive.defaults('hiveclient')) {
+
+	rhive.mrapply(tablename,mapperFUN=NULL, reducerFUN=reducerFUN,reduceinput=reduceinput,reduceoutput=reduceoutput,mapper_args=NULL, reducer_args=args, buffersize=buffersize, verbose=verbose,forcedRef = forcedRef, hiveclient=hiveclient)
+
+}
+
+rhive.mrapply <- function(tablename, mapperFUN, reducerFUN, mapinput=NULL, mapoutput=NULL, by=NULL, reduceinput=NULL,reduceoutput=NULL, mapper_args=NULL, reducer_args=NULL, buffersize=-1L, verbose=FALSE, forcedRef = TRUE, hiveclient =rhive.defaults('hiveclient')) {
 
 	if(!is.character(tablename))
 		stop("argument type is wrong. tablename must be string type.")
@@ -592,12 +668,24 @@ rhive.mrapply <- function(tablename, mapperFUN, reducerFUN, mapinput=NULL, mapou
     
     }
     
+    isBigQuery <- FALSE
+    tmptable <- NULL
+    
     if(!is.null(reducerFUN)) {
         
 	    client$execute(.jnew("java/lang/String",paste("add file hdfs:///rhive/script/",reduceScript,sep="")))
-        
-        hql <- paste(hql,"REDUCE",ricols,"USING",paste("'",reduceScript,"'",sep=""),sep=" ")
+		tmptable <- paste("rhive_result_",as.integer(Sys.time()),sep="") 
+		
+		createql <- NULL
+		if(!is.null(reduceoutput)) {
+			createql <- paste("CREATE TABLE", tmptable,"(", paste(reduceoutput,"string",collapse=",") ,")",sep=" ")
+		} 
+		if(is.null(createql))
+			stop("fail to generate create query because of no reduce-output columns")
+			
+		rhive.query(createql)
 
+        hql <- paste(hql,"INSERT OVERWRITE TABLE", tmptable,"SELECT TRANSFORM (",ricols,") USING",paste("'",reduceScript,"'",sep=""),sep=" ")
     	if(!is.null(rocols)) {
     		hql <- paste(hql,"as",rocols,sep=" ")
     	}
@@ -609,20 +697,86 @@ rhive.mrapply <- function(tablename, mapperFUN, reducerFUN, mapinput=NULL, mapou
     	}else{
         	hql <- paste("SELECT",mocols,hql,sep=" ")
         }
+        
+        isBigQuery <- TRUE
     
     }
 
-    if(is.null(mapperFUN) && is.null(reducerFUN))
+    if(is.null(mapperFUN) && is.null(reducerFUN)) {
     	hql <- paste("SELECT * FROM ", tablename,sep="")
-
-	if(verbose) 
+    	
+    	isBigQuery <- TRUE
+    }
+    
+    if(verbose) 
 		print(paste("HIVE-QUERY : ", hql,sep=""))
 
-	resultSet <- rhive.query(hql,hiveclient=hiveclient)
+	resultSet <- NULL
+	if(isBigQuery) {
+		if(forcedRef)
+			resultSet <- rhive.big.query(hql,memlimit=-1,hiveclient=hiveclient)
+		else
+			resultSet <- rhive.big.query(hql,hiveclient=hiveclient)
+	} else {
+	    memsize <- 57374182
+    	rhive.query(hql,hiveclient=hiveclient)
+
+		length <- rhive.size.table(tmptable)
+	
+		if(forcedRef || length > memsize) {	
+			x <- tmptable
+			attr(x,"result:size") <- length
+			
+			resultSet <- x
+		}else {
+			result <- rhive.query(paste("select * from",tmptable),hiveclient=hiveclient)
+			rhive.query(paste("DROP TABLE ",tmptable,sep=""), hiveclient = hiveclient)
+			
+			resultSet <- result
+		}
+    }
 
 	rhive.script.unexport(exportname)
 
 	return(resultSet)
+}
+
+
+rhive.drop.table <- function(tablename, list, hiveclient =rhive.defaults('hiveclient')) {
+
+	if(!missing(tablename)) {			
+		tablename <- tolower(tablename)
+	
+		rhive.query(paste("DROP TABLE IF EXISTS ",tablename,sep=""))
+	}
+
+	if(!missing(list)) {
+		if(is.data.frame(list)) {
+			list <- as.character(list[,'tab_name'])
+		}
+		
+		for(tablename in list) {				
+			tablename <- tolower(tablename)
+			
+			rhive.query(paste("DROP TABLE IF EXISTS ",tablename,sep=""))		
+		}
+	}
+}
+
+
+rhive.size.table <- function(tablename, hiveclient =rhive.defaults('hiveclient')) {
+
+	if(missing(tablename))
+		stop("missing tablename")
+
+	tablename <- tolower(tablename)
+
+	metainfo <- rhive.desc.table(tablename,detail=TRUE, hiveclient = hiveclient)
+	location <- strsplit(strsplit(paste(metainfo,""),"location:")[[1]][2],",")[[1]][1]
+
+	datainfo <- rhive.hdfs.du(location, summary=TRUE)
+	return(datainfo$length)
+
 }
 
 rhive.as.string <- function(columns,prefix=NULL) {

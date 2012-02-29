@@ -24,9 +24,10 @@ rhive.hdfs.connect <- function(hdfsurl=rhive.hdfs.default.name()) {
      
      fs <- fileSystem$get(config)
      fsshell <- .jnew("org/apache/hadoop/fs/FsShell",config)
+     dfutils <- .jnew("com/nexr/rhive/util/DFUtils",config)
      
-     hdfs <- list(fs,fsshell)
-     assign('hdfs',hdfs,env=RHive:::.rhiveEnv)
+     hdfs <- list(fs,fsshell,dfutils)
+     assign('hdfs',hdfs,envir=RHive:::.rhiveEnv)
    
    	 if(rhive.hdfs.exists('/rhive/lib/rhive_udf.jar'))
    	 	rhive.hdfs.rm('/rhive/lib/rhive_udf.jar')
@@ -114,6 +115,57 @@ rhive.hdfs.ls <- function(path="/", hdfs = rhive.hdfs.defaults('hdfs')) {
 
 	rownames(df) <- NULL
     colnames(df) <- c("permission", "owner", "group", "length", "modify-time", "file")
+
+	return(df)
+}
+
+rhive.hdfs.du <- function(path="/", summary = FALSE, hdfs = rhive.hdfs.defaults('hdfs')) {
+
+	.checkHDFSConnection(hdfs)
+    fileSystem <- .jcast(hdfs[[1]], new.class="org/apache/hadoop/fs/FileSystem",check = FALSE, convert.array = FALSE)
+
+	rdata <- list()
+    transformer <- J("com.nexr.rhive.util.TransformUtils")
+
+    if(summary) {
+		listStatus <- fileSystem$globStatus(.jnew("org/apache/hadoop/fs/Path",.jnew("java/lang/String",path)));    
+    }else {
+		listStatus <- fileSystem$listStatus(.jnew("org/apache/hadoop/fs/Path",.jnew("java/lang/String",path)));
+	}
+
+	for(index in c(1:listStatus$length)) {
+	 	item <- .jcast(listStatus[[index]], new.class="org/apache/hadoop/fs/FileStatus",check = FALSE, convert.array = FALSE)
+	 	
+	 	splits <- transformer$tranform(item)
+	 	
+	    if(index == 1) {	 
+		    if(item$isDir()) {
+		 		len <- fileSystem$getContentSummary(item$getPath())$getLength()
+		 		rdata[[1]] <- c(len)
+			    rdata[[2]] <- c(splits[6])	
+		 	}else {
+		 		rdata[[1]] <- c(splits[4])
+			    rdata[[2]] <- c(splits[6])	
+		 	}   
+	    }else {	
+		    if(item$isDir()) {
+		 		len <- fileSystem$getContentSummary(item$getPath())$getLength()
+		 		rdata[[1]] <- c(rdata[[1]],len)
+			    rdata[[2]] <- c(rdata[[2]],splits[6])
+		 	
+		 	}else {
+			    rdata[[1]] <- c(rdata[[1]],splits[4])
+			    rdata[[2]] <- c(rdata[[2]],splits[6])	
+		 	}
+	    }
+	}
+	
+	if(listStatus$length == 0) return(NULL)
+
+    df <- as.data.frame(rdata)
+
+	rownames(df) <- NULL
+    colnames(df) <- c("length", "file")
 
 	return(df)
 }
@@ -276,6 +328,61 @@ rhive.hdfs.tail <- function(path, hdfs = rhive.hdfs.defaults('hdfs')) {
 	invisible()
 }
 
+rhive.hdfs.chmod <- function(cmd, path, recursive=FALSE, hdfs = rhive.hdfs.defaults('hdfs')) {
+
+	if(missing(path))
+		stop("missing argument")
+
+	.checkHDFSConnection(hdfs)
+
+	fsshell <- .jcast(hdfs[[2]], new.class="org/apache/hadoop/fs/FsShell",check = FALSE, convert.array = FALSE)
+	
+	if(recursive) {
+		fsshell$run(c("-chmod","-R",cmd,path))
+	}else {
+		fsshell$run(c("-chmod",cmd,path))
+	}
+	invisible()
+}
+
+
+rhive.hdfs.chown <- function(cmd, path, recursive=FALSE, hdfs = rhive.hdfs.defaults('hdfs')) {
+
+	if(missing(path))
+		stop("missing argument")
+
+	.checkHDFSConnection(hdfs)
+
+	fsshell <- .jcast(hdfs[[2]], new.class="org/apache/hadoop/fs/FsShell",check = FALSE, convert.array = FALSE)
+	
+	if(recursive) {
+		fsshell$run(c("-chown","-R",cmd,path))
+	}else {
+		fsshell$run(c("-chown",cmd,path))
+	}
+	invisible()
+
+}
+
+rhive.hdfs.chgrp <- function(cmd, path, recursive=FALSE, hdfs = rhive.hdfs.defaults('hdfs')) {
+
+	if(missing(path))
+		stop("missing argument")
+
+	.checkHDFSConnection(hdfs)
+
+	fsshell <- .jcast(hdfs[[2]], new.class="org/apache/hadoop/fs/FsShell",check = FALSE, convert.array = FALSE)
+	
+	if(recursive) {
+		fsshell$run(c("-chgrp","-R",cmd,path))
+	}else {
+		fsshell$run(c("-chgrp",cmd,path))
+	}
+	invisible()
+
+}
+
+
 rhive.hdfs.close <- function(hdfs = rhive.hdfs.defaults('hdfs')) {
 
     .checkHDFSConnection(hdfs)
@@ -310,14 +417,18 @@ rhive.write.table <- function(dat, tablename = NULL, sep = ",", nastring = NULL,
     }
     if (length(tablename) != 1L) 
         stop(sQuote(tablename), " should be a name")
-	exportname <- tablename
+        
+	exportname <- paste(tablename,".rhive",sep="")
+	
 	if(is.null(tablename)) {
-		exportname <- paste("rhive_r_table",as.integer(Sys.time()),".rhive",sep="")
+		stop("tablename should be named")
 	}
 
-	rowname <- "rowname"
-    dat <- cbind(row.names(dat), dat)
-    names(dat)[1L] <- rowname
+	if(length(intersect(names(dat),"rhive_row")) == 0) {
+		rowname <- "rhive_row"
+	    dat <- cbind(row.names(dat), dat)
+	    names(dat)[1L] <- rowname
+    }
 	
 	types <- sapply(dat, typeof)
 	facs <- sapply(dat, is.factor)
@@ -332,7 +443,9 @@ rhive.write.table <- function(dat, tablename = NULL, sep = ",", nastring = NULL,
 	
 	names(colspecs) <- names(dat)
 
-	hdfs_root_path <- paste("/rhive/data/",as.integer(Sys.time()),sep="")
+	dirname <- paste(tablename,"_",as.integer(Sys.time()),sep="")
+	
+	hdfs_root_path <- paste("/rhive/data/",dirname,sep="")
     hdfs_path <- paste(hdfs_root_path,"/",exportname,sep="")
 	
 	hquery <- .generateCreateQuery(tablename, colspecs, hdfs_path = hdfs_root_path, sep = sep)
@@ -412,11 +525,40 @@ rhive.script.unexport <- function(exportname,hdfs = rhive.hdfs.defaults('hdfs'))
 	return(TRUE)
 }
 
+
+rhive.hdfs.info <- function(path, hdfs = rhive.hdfs.defaults('hdfs')) {
+
+	dfutils <- .jcast(hdfs[[3]], new.class="com/nexr/rhive/util/DFUtils",check = FALSE, convert.array = FALSE)
+	
+	metas <- dfutils$getFileInfo(path)
+	
+	rdata <- list()
+
+	rdata[[1]] <- c(as.numeric(strsplit(metas[1],' ')[[1]][1]))
+	rdata[[2]] <- c(as.numeric(metas[2]))
+	rdata[[3]] <- c(as.numeric(metas[3]))
+	rdata[[4]] <- c(as.numeric(metas[4]))
+
+    df <- as.data.frame(rdata)
+
+	rownames(df) <- NULL
+    colnames(df) <- c("size", "dirs", "files", "blocks")
+
+	return(df)
+
+}
+
+
 .generateCreateQuery <- function (tablename, colspecs, hdfs_path, sep = ",")
 {
     create <- paste("CREATE TABLE ", tablename , " (")
     
     colnames <- gsub("[^[:alnum:]_]+", "", names(colspecs))
+    
+    if(any(duplicated(tolower(colnames))) == TRUE) {
+    	stop(paste("hive doesn't support case-sensitive column-name :",paste(colnames,collapse=",")))
+    }
+
     entries <- paste(colnames, colspecs)
     create <- paste(create, paste(entries, collapse = ", "), sep="")
     create <- paste(create, ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '", sep , "'",sep="")
@@ -447,7 +589,7 @@ rhive.script.unexport <- function(exportname,hdfs = rhive.hdfs.defaults('hdfs'))
 	
 	status <- system(sprintf("chmod 775 %s", script), ignore.stderr = TRUE)
 	
-	if(status) {
+	if(status != 0) {
 		warning("no executable found")
 		invisible(FALSE)
 	}

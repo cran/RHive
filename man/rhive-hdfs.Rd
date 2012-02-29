@@ -11,8 +11,13 @@
 \alias{rhive.hdfs.mkdirs}
 \alias{rhive.hdfs.cat}
 \alias{rhive.hdfs.tail}
+\alias{rhive.hdfs.du}
 \alias{rhive.hdfs.close}
 \alias{rhive.write.table}
+\alias{rhive.hdfs.info}
+\alias{rhive.hdfs.chmod}
+\alias{rhive.hdfs.chown}
+\alias{rhive.hdfs.chgrp}
 \title{R functions to communicate with HDFS}
 \usage{
 rhive.save(..., file, envir = parent.frame(), hdfs = rhive.hdfs.defaults('hdfs'))
@@ -27,8 +32,13 @@ rhive.hdfs.exists(path, hdfs = rhive.hdfs.defaults('hdfs'))
 rhive.hdfs.mkdirs(path, hdfs = rhive.hdfs.defaults('hdfs'))
 rhive.hdfs.cat(path, hdfs = rhive.hdfs.defaults('hdfs')) 
 rhive.hdfs.tail(path, hdfs = rhive.hdfs.defaults('hdfs')) 
+rhive.hdfs.du(path="/", summary = FALSE, hdfs = rhive.hdfs.defaults('hdfs'))
 rhive.hdfs.close(hdfs = rhive.hdfs.defaults('hdfs'))
 rhive.write.table(dat, tablename = NULL, sep = ",", nastring = NULL, hdfs = rhive.hdfs.defaults('hdfs'), hiveclient=rhive.hdfs.defaults('hiveclient'))
+rhive.hdfs.info(path, hdfs = rhive.hdfs.defaults('hdfs'))
+rhive.hdfs.chmod(cmd, path, recursive=FALSE, hdfs = rhive.hdfs.defaults('hdfs'))
+rhive.hdfs.chown(cmd, path, recursive=FALSE, hdfs = rhive.hdfs.defaults('hdfs'))
+rhive.hdfs.chgrp(cmd, path, recursive=FALSE, hdfs = rhive.hdfs.defaults('hdfs'))
 }
 \description{
 R functions to communicate with HDFS
@@ -60,6 +70,14 @@ rhive.save : save R Objects to HDFS as R data format
 rhive.load : load R data format file stored in HDFS
 
 rhive.write.table : create Hive table using R data.frame
+
+rhive.hdfs.info : report block information of path
+
+rhive.hdfs.chmod : change mode for specified path. 
+
+rhive.hdfs.chown : change ownership for specified path.
+
+rhive.hdfs.chgrp : change group for specified path.
 }
 \arguments{
 \item{hdfsurl}{namenode url for connecting to hdfs.}
@@ -78,6 +96,9 @@ rhive.write.table : create Hive table using R data.frame
           are separated by this string}
 \item{nastring}{default value for NA.}
 \item{hiveclient}{a client for hive.}
+\item{summary}{summarize result of 'du'.}
+\item{cmd}{specific command. chmod's command is 775 or chown's command is user-id.}
+\item{recursive}{apply command recursively}
 } 
 \author{
 \email{rhive@nexr.com}

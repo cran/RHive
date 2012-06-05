@@ -73,6 +73,9 @@ rhive.hdfs.ls <- function(path="/", hdfs = rhive.hdfs.defaults('hdfs')) {
 
     .checkHDFSConnection(hdfs)
     
+    if(!rhive.hdfs.exists(path))
+    	return(NULL)
+    
     fileSystem <- .jcast(hdfs[[1]], new.class="org/apache/hadoop/fs/FileSystem",check = FALSE, convert.array = FALSE)
 
 	rdata <- list()
@@ -443,7 +446,9 @@ rhive.write.table <- function(dat, tablename = NULL, sep = ",", nastring = NULL,
 	
 	names(colspecs) <- names(dat)
 
-	dirname <- paste(tablename,"_",as.integer(Sys.time()),sep="")
+    postfix <- format(as.POSIXlt(Sys.time()),format="%Y%m%d%H%M%S")
+
+	dirname <- paste(tablename,"_",postfix,sep="")
 	
 	hdfs_root_path <- paste("/rhive/data/",dirname,sep="")
     hdfs_path <- paste(hdfs_root_path,"/",exportname,sep="")
@@ -587,13 +592,13 @@ rhive.hdfs.info <- function(path, hdfs = rhive.hdfs.defaults('hdfs')) {
 		cat(sprintf("%s", line), file = output, sep="\n", append = TRUE)
 	}
 	
-	status <- system(sprintf("chmod 775 %s", script), ignore.stderr = TRUE)
+	status <- system(sprintf("chmod 775 %s", output), ignore.stderr = TRUE)
 	
 	if(status != 0) {
 		warning("no executable found")
 		invisible(FALSE)
 	}
-	invisible(script)
+	invisible(output)
 }
 
 .local_cleanup <- function(files){

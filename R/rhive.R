@@ -32,6 +32,9 @@ rhive.init <- function(hive=NULL,libs=NULL,hadoop=NULL,hlibs=NULL,verbose=FALSE)
 	  slaves <- try(read.csv(sprintf("%s/conf/slaves",hadoop),header=FALSE)$V1,silent=TRUE)
 	  if(class(slaves) != "try-error")
 	  	assign("slaves",as.character(slaves),envir=.rhiveEnv)
+	  else {
+	  	print("there is no slaves file of HADOOP. so you should pass hosts argument when you call rhive.connect().")
+	  }
   
   }
   
@@ -107,6 +110,21 @@ rhive.env <- function(ALL=FALSE) {
 	if(!is.null(slaves)) {
 		cat(sprintf("Default RServe List\n"))
 		cat(sprintf("%s", unlist(slaves)))
+		
+		port <- 6311
+		
+		for(rhost in slaves) {
+		
+			port <- 6311
+		
+	    	rcon <- RSconnect(rhost, port)
+	    	rhive_data <- RSeval(rcon,"Sys.getenv('RHIVE_DATA')")
+	    	
+	    	cat(sprintf("%s : RHIVE_DATA = %s\n",rhost,rhive_data))
+	    	
+	    	RSclose(rcon)
+	    }
+		
 		cat(sprintf("\n"))
 	}else {
 		cat(sprintf("No RServe\n"))
@@ -172,6 +190,7 @@ rhive.connect <- function(host="127.0.0.1",port=10000, hdfsurl=NULL ,hosts = rhi
      client$execute(.jnew("java/lang/String","create temporary function expand as 'com.nexr.rhive.hive.udf.GenericUDTFExpand'"))
      client$execute(.jnew("java/lang/String","create temporary function rkey as 'com.nexr.rhive.hive.udf.RangeKeyUDF'"))
      client$execute(.jnew("java/lang/String","create temporary function scale as 'com.nexr.rhive.hive.udf.ScaleUDF'"))
+     client$execute(.jnew("java/lang/String","create temporary function array2String as 'com.nexr.rhive.hive.udf.GenericUDFArrayToString'"))
 
      hiveclient <- list(client,hivecon,c(host,port),hosts,hdfs,hdfsurl)
      
@@ -204,7 +223,10 @@ rhive.close <- function(hiveclient=rhive.defaults('hiveclient')) {
 
 rhive.big.query <- function(query ,fetchsize = 40, limit = -1, memlimit = 57374182, hiveclient =rhive.defaults('hiveclient')) {
 
-	tmptable <- paste("rhive_result_",as.integer(Sys.time()),sep="")
+
+    postfix <- format(as.POSIXlt(Sys.time()),format="%Y%m%d%H%M%S")
+
+	tmptable <- paste("rhive_result_",postfix,sep="")
 	query <- paste("CREATE TABLE ", tmptable," AS ", query,sep="")
 	
 	rhive.query(query, fetchsize = fetchsize, limit = limit, hiveclient = hiveclient)
@@ -216,7 +238,12 @@ rhive.big.query <- function(query ,fetchsize = 40, limit = -1, memlimit = 573741
 
 		return(x)
 	}else {
-		result <- rhive.query(paste("select * from",tmptable),hiveclient=hiveclient)
+	
+		if(length < 1024 * 1024)
+			result <- rhive.query(paste("select * from",tmptable),hiveclient=hiveclient)
+		else
+			result <- rhive.load.table2(tmptable,hiveclient=hiveclient)
+			
 		rhive.query(paste("DROP TABLE ",tmptable,sep=""), hiveclient = hiveclient)
 		return(result)
 	}
@@ -243,7 +270,9 @@ rhive.query <- function(query, fetchsize = 40, limit = -1, hiveclient=rhive.defa
 	        rschema <- .jcast(schema$get(as.integer(pos)), new.class="org/apache/hadoop/hive/metastore/api/FieldSchema",check = FALSE, convert.array = FALSE)
 	        if(rschema$getType() == "string") {
 	        	rdata[[pos + 1]] <- character()
-	        } else {
+	        } else if(length(grep("^array",rschema$getType())) > 0) {
+				rdata[[pos + 1]] <- character()
+		   	} else {
 	        	rdata[[pos + 1]] <- numeric()
 	        }
 	        	
@@ -334,10 +363,20 @@ rhive.export <- function(exportname, hiveclient=rhive.defaults('hiveclient'), po
 			print("exceed limit object size")
 		}
 		
-		command <- paste("save(",exportname,",file=paste(Sys.getenv('RHIVE_DATA')",",'/",exportname,".Rdata',sep=''))",sep="")
-		RSeval(rcon,command)
+		rhive_data <- RSeval(rcon,"Sys.getenv('RHIVE_DATA')")
 		
-		RSclose(rcon)
+		if(is.null(rhive_data) || rhive_data == "") {
+			command <- paste("save(",exportname,",file=paste('/tmp'",",'/",exportname,".Rdata',sep=''))",sep="")
+			RSeval(rcon,command)
+			
+			RSclose(rcon)
+		}else {
+		
+			command <- paste("save(",exportname,",file=paste(Sys.getenv('RHIVE_DATA')",",'/",exportname,".Rdata',sep=''))",sep="")
+			RSeval(rcon,command)
+			
+			RSclose(rcon)
+		}
 	}
 	
 	return(TRUE)
@@ -372,11 +411,20 @@ rhive.exportAll <- function(exportname, hiveclient=rhive.defaults('hiveclient'),
 				print("exceed limit object size")
 			}
 	    }
+	    
+	    rhive_data <- RSeval(rcon,"Sys.getenv('RHIVE_DATA')")
+	    
+	    if(is.null(rhive_data) || rhive_data == "") {
+	    	command <- paste("save(list=ls(pattern=\"[^exportname]\")",",file=paste('/tmp'",",'/",exportname,".Rdata',sep=''))",sep="")	
+			RSeval(rcon,command)
 		
-		command <- paste("save(list=ls(pattern=\"[^exportname]\")",",file=paste(Sys.getenv('RHIVE_DATA')",",'/",exportname,".Rdata',sep=''))",sep="")	
-		RSeval(rcon,command)
-	
-		RSclose(rcon)
+			RSclose(rcon)
+	    }else {
+			command <- paste("save(list=ls(pattern=\"[^exportname]\")",",file=paste(Sys.getenv('RHIVE_DATA')",",'/",exportname,".Rdata',sep=''))",sep="")	
+			RSeval(rcon,command)
+		
+			RSclose(rcon)
+		}
 	
 	}
 	
@@ -424,11 +472,10 @@ rhive.desc.table <- function(tablename,detail=FALSE,hiveclient=rhive.defaults('h
 
 rhive.load.table <- function(tablename, fetchsize = 40, limit = -1, hiveclient=rhive.defaults('hiveclient')) {
 
-	memsize <- 107374182
+	memsize <- 2097152
 
 	if(!is.character(tablename))
 		stop("argument type is wrong. tablename must be string type.")
-
 
 	length <- rhive.size.table(tablename)
 
@@ -438,7 +485,7 @@ rhive.load.table <- function(tablename, fetchsize = 40, limit = -1, hiveclient=r
 			result <- rhive.query(paste("select * from",tablename,"limit",limit),hiveclient=hiveclient)
 			return(result)
 		} else {
-			print("this table is too big to load")
+			print("this table is too large to load with this function. use 'rhive.load.table2' instead.")
 		    x <- tablename
 			attr(x,"result:size") <- length
 		    return(x)
@@ -450,6 +497,53 @@ rhive.load.table <- function(tablename, fetchsize = 40, limit = -1, hiveclient=r
 		return(result)
 	
 	}
+}
+
+rhive.load.table2 <- function(tablename, remote = TRUE, hiveclient=rhive.defaults('hiveclient')) {
+
+	if(!is.character(tablename))
+		stop("argument type is wrong. tablename must be string type.")
+
+    dirname <- format(as.POSIXlt(Sys.time()),format="%Y%m%d_%H%M%S")
+    
+    if(!file.exists("rhive_load")) {
+    	dir.create("rhive_load")
+    }
+    
+    dir <- paste(getwd(),"/rhive_load/",dirname,sep="")
+	dir.create(dir)
+
+	colnames <- NULL
+
+	if(remote) {
+	    if(!rhive.hdfs.exists("/tmp/rhive_load")) {
+    		rhive.hdfs.mkdirs("/tmp/rhive_load")
+    	}
+    	
+    	hdfs <- paste("/tmp/rhive_load/",dirname,sep="")
+
+		colnames <- rhive.query(paste("insert overwrite directory '",hdfs,"' select * from ",tablename,sep=""))
+	
+		rhive.hdfs.get(hdfs, dir, sourcedelete = TRUE);
+		dir <- paste(dir,"/",dirname,sep="")
+	
+	}else {
+		colnames <- rhive.query(paste("insert overwrite local directory '",dir,"' select * from ",tablename,sep=""))
+	}
+	
+	fullData <- NULL
+	
+	for(filename in list.files(dir,full.names=TRUE)) {
+	      data <- read.csv(file=filename,header=FALSE,sep='\001')
+		  if(is.null(fullData))
+		  	  fullData <- data
+		  else
+		      fullData <- rbind(fullData,data)
+	}
+
+	names(fullData) <- names(colnames)
+	
+	return(fullData)
 }
 
 rhive.exist.table <- function(tablename, hiveclient=rhive.defaults('hiveclient')) {

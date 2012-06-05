@@ -439,9 +439,26 @@ public class RUDAF extends AbstractGenericUDAFResolver {
             if (!funclist.containsKey(export_name)) {
                 
                 try {
-                    getConnection().eval(
-                            "load(file=paste(Sys.getenv('RHIVE_DATA'),'/" + export_name
-                                    + ".Rdata',sep=''))");
+                    
+                    REXP rhive_data = getConnection().eval("Sys.getenv('RHIVE_DATA')");
+                    String srhive_data = null;
+                    
+                    if(rhive_data != null) {
+                        srhive_data = rhive_data.asString();
+                    }
+
+                    if(srhive_data == null || srhive_data == "") {
+
+                        getConnection().eval(
+                                "load(file=paste('/tmp','/" + export_name
+                                        + ".Rdata',sep=''))");
+                    }else {
+                    
+                        getConnection().eval(
+                                "load(file=paste(Sys.getenv('RHIVE_DATA'),'/" + export_name
+                                        + ".Rdata',sep=''))");
+                    
+                    }
                 } catch (Exception e) {
                     ByteArrayOutputStream output = new ByteArrayOutputStream();
                     e.printStackTrace(new PrintStream(output));

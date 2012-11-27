@@ -5,7 +5,7 @@
 \alias{rhive.close}
 \title{Manage connection to Hive using functions in Package `RHive'}
 \usage{
-rhive.init(hive=NULL,libs=NULL,hadoop=NULL, hlibs=NULL, verbose=FALSE)
+rhive.init(hive=NULL, libs=NULL, hadoop_home=NULL, hadoop_conf=NULL, hlibs=NULL, verbose=FALSE)
 rhive.env(ALL=FALSE)
 rhive.connect(host="127.0.0.1",port=10000, hdfsurl=NULL ,hosts = rhive.defaults('slaves'))
 rhive.close(hiveclient=rhive.defaults('hiveclient'))
@@ -15,7 +15,8 @@ Manage connection to Hive using functions in Package `RHive'
 }
 \arguments{
 \item{hive}{path of hive's installation or if HIVE_HOME is set, it is possible to use as NULL.}
-\item{hadoop}{path of hadoop's installation or if HADOOP_HOME is set, it is possible to use as NULL.}
+\item{hadoop_home}{path of hadoop's installation or if HADOOP_HOME is set, it is possible to use as NULL.}
+\item{hadoop_conf}{path of hadoop's configuation or if HADOOP_CONF_DIR is set, it is possible to use as NULL.}
 \item{libs}{library path to be added to classpath.}
 \item{hlibs}{hadoop library path to be added to classpath.}
 \item{host}{hive-server address for connecting to hive.}

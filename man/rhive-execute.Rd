@@ -1,25 +1,20 @@
-\name{rhive-query}
-\alias{rhive.query}
-\alias{rhive.big.query}
+\name{rhive-execute}
+\alias{rhive.execute}
 \title{Execute HQL(Hive Query) in R, using functions in Package `RHive'}
 \usage{
-rhive.query(query, fetchSize=50, limit=-1)
-rhive.big.query(query ,fetchSize=50, limit=-1, memLimit=64*1024*1024)
+rhive.execute(query)
 }
 \description{
 Execute HQL(Hive Query) in R using functions in Package `RHive'
 }
 \arguments{
 \item{query}{hive query.}
-\item{fetchSize}{fetch size for result.}
-\item{limit}{total result size.}
-\item{memLimit}{the size of data can be handled in R's memory.}
 } 
 \details{
 The query argument is Hive Query Language. 
 }
 \value{
-\code{rhive.query} returns data.frame.
+\code{rhive.execute} returns TRUE on success.
 }
 \references{
 Apache Hive Query Language Manual
@@ -33,7 +28,14 @@ Apache Hive Query Language Manual
 \dontrun{rhive.connect("127.0.0.1")}
 
 ## execute hive query
-\dontrun{rhive.query("select ename from emp")}
+\dontrun{rhive.execute("create table emp (empno int, 
+                                          ename string, 
+                                          position string, 
+                                          col int,
+                                          fday string, 
+                                          sal double,
+                                          status string, 
+                                          deptno int)")}
 
 ## close connection
 \dontrun{rhive.close()}

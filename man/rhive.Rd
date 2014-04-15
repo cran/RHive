@@ -4,14 +4,15 @@
 \docType{package}
 \title{rhive: R and Hive}
 \description{
-	RHive is an R extension facilitating distributed computing via HIVE query.
-	It allows easy usage of HQL in R, and allows easy usage of R objects and R functions in Hive.
+  RHive is an R extension facilitating distributed computing via HIVE query.
+  It allows easy usage of HQL in R, and allows easy usage of R objects and 
+  R functions in Hive.
 }
 \author{
 \email{rhive@nexr.com}
 }
 \details{
-  The rhive package supplies functions to interact
+  The RHive package supplies functions to interact
   with Hive from within R. 
   There are functions for exporting and connecting
   as well as querying hive.
@@ -19,16 +20,25 @@
 \seealso{
 rhive.init
 rhive.connect
+rhive.set
+rhive.unset
 rhive.query
+rhive.execute
 rhive.big.query
 rhive.assign
 rhive.rm
 rhive.export
 rhive.exportAll
+rhive.list.udfs
+rhive.rm.udf
 rhive.script.export
 rhive.script.unexport
 rhive.close
+rhive.list.databases
+rhive.show.databases
+rhive.use.database
 rhive.list.tables
+rhive.show.tables
 rhive.desc.table
 rhive.load.table
 rhive.exist.table
@@ -71,12 +81,14 @@ rhive.basic.t.test
 rhive.block.sample
 rhive.write.table
 hiveConnect
+hiveSet
 hiveQuery
 hiveAssign
 hiveRm
 hiveExport
 hiveExportAll
 hiveClose
+hiveListDatabases
 hiveListTables
 hiveDescTable
 hiveLoadTable

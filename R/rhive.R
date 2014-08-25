@@ -567,7 +567,7 @@
 
   fullData <- NULL
   for (filename in list.files(localDir, full.names=TRUE, recursive=TRUE)) {
-    data <- read.csv(file=filename, header=FALSE, sep='\001', nrows=limit)
+    data <- read.csv(file=filename, header=FALSE, sep='\001', quote="", nrows=limit)
     if (is.null(fullData)) {
       fullData <- data
     } else {
